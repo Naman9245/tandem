@@ -38,9 +38,10 @@ async function invite(client, listId, email) {
 }
 
 // The local stack catches outgoing email in Mailpit; wait for one to arrive.
-async function waitForEmail(to) {
+async function waitForEmail(to, subject = "") {
+  const query = `to:"${to}"` + (subject ? ` subject:"${subject}"` : "");
   for (let i = 0; i < 40; i++) {
-    const res = await fetch(`${MAIL_URL}/api/v1/search?query=${encodeURIComponent(`to:"${to}"`)}`);
+    const res = await fetch(`${MAIL_URL}/api/v1/search?query=${encodeURIComponent(query)}`);
     const { messages = [] } = await res.json();
     if (messages.length) {
       const msg = await fetch(`${MAIL_URL}/api/v1/message/${messages[0].ID}`).then((r) => r.json());
@@ -150,7 +151,7 @@ await test("the invite link signs carol in and she can see the list", async () =
   const url = new URL(href);
   assert.equal(url.pathname, "/auth/confirm");
   assert.equal(url.searchParams.get("type"), "invite");
-  assert.equal(url.searchParams.get("next"), "/welcome");
+  assert.equal(url.searchParams.get("next"), "/set-password");
 
   // This is what the app's /auth/confirm route does with the link.
   const carol = newClient();
@@ -160,11 +161,44 @@ await test("the invite link signs carol in and she can see the list", async () =
   const { data } = await carol.from("lists").select("title").eq("id", list.id).single();
   assert.equal(data.title, "Road trip");
 
-  // ...and what /welcome does, after which she can sign in normally.
+  // ...and what /set-password does, after which she can sign in normally.
   const { error: pwError } = await carol.auth.updateUser({ password: PASSWORD });
   assert.ifError(pwError);
   const { error: signInError } = await newClient().auth.signInWithPassword({ email: carolEmail, password: PASSWORD });
   assert.ifError(signInError);
+});
+
+await test("a forgotten password can be reset from the emailed link", async () => {
+  const { error } = await newClient().auth.resetPasswordForEmail(carolEmail);
+  assert.ifError(error);
+
+  const html = await waitForEmail(carolEmail, "Reset your Tandem password");
+  const url = new URL(html.match(/href="([^"]+)"/)[1].replaceAll("&amp;", "&"));
+  assert.equal(url.pathname, "/auth/confirm");
+  assert.equal(url.searchParams.get("type"), "recovery");
+  assert.equal(url.searchParams.get("next"), "/set-password");
+
+  const carol = newClient();
+  const { error: verifyError } = await carol.auth.verifyOtp({
+    type: "recovery",
+    token_hash: url.searchParams.get("token_hash"),
+  });
+  assert.ifError(verifyError);
+  const { error: pwError } = await carol.auth.updateUser({ password: "a-brand-new-password" });
+  assert.ifError(pwError);
+
+  const { error: oldPw } = await newClient().auth.signInWithPassword({ email: carolEmail, password: PASSWORD });
+  assert.equal(oldPw?.code, "invalid_credentials");
+  const { error: newPw } = await newClient().auth.signInWithPassword({
+    email: carolEmail,
+    password: "a-brand-new-password",
+  });
+  assert.ifError(newPw);
+});
+
+await test("signing up twice with the same email is refused", async () => {
+  const { error } = await newClient().auth.signUp({ email: alice.email, password: PASSWORD });
+  assert.equal(error?.code, "user_already_exists");
 });
 
 await test("bob can leave the list", async () => {

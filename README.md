@@ -6,11 +6,11 @@ Shared checklists on **Next.js 16** and **Supabase**. Sign up, make a list, shar
 
 The app is small on purpose. The interesting part is that **Postgres decides who can see what**. The Next.js code never checks permissions. Every query runs as the signed-in user, and row-level security policies filter or reject it. One edge function does the one job a browser can't be trusted with: sharing a list by email.
 
-- **Auth:** Supabase Auth with email and password. Sessions live in cookies via `@supabase/ssr`, and a Next.js proxy refreshes them on each request.
+- **Auth:** Supabase Auth with email and password, including sign-up and password reset by email. Sessions live in cookies via `@supabase/ssr`, and a Next.js proxy refreshes them on each request.
 - **3 tables:** `lists`, `list_members`, `items`.
 - **Row-level security** on all three, plus column-level grants.
 - **1 edge function:** `invite-member` looks up (or invites) a user by email and adds them to a list.
-- **Tests:** 25 pgTAP tests for the policies and a 14-step end-to-end script for auth and the edge function. Both run in CI against a real local Supabase stack.
+- **Tests:** 25 pgTAP tests for the policies and 16 end-to-end checks for auth and the edge function. Both run in CI against a real local Supabase stack.
 
 ## Access rules
 
@@ -36,7 +36,7 @@ All of this lives in [`supabase/migrations/20260928120000_init.sql`](supabase/mi
 1. `verify_jwt = true`, so the platform rejects requests without a valid user JWT before the code runs.
 2. The function creates a client **with the caller's JWT** and reads the list through RLS. A list the caller can't see is a 404; a list they can see but don't own is a 403.
 3. Only then does it switch to the **secret key**. It resolves the email to a user id through `public.user_id_by_email`, which only `service_role` may execute. Signed-in users get `permission denied`, so the API can't be used to probe for accounts.
-4. If nobody has that email yet, it calls `auth.admin.inviteUserByEmail`. That creates the account and sends an invite link, and the membership row is written straight away. When the invitee clicks the link they land on `/welcome`, choose a password, and the list is already waiting under "Shared with you".
+4. If nobody has that email yet, it calls `auth.admin.inviteUserByEmail`. That creates the account and sends an invite link, and the membership row is written straight away. When the invitee clicks the link they land on `/set-password`, choose a password, and the list is already waiting under "Shared with you".
 
 A plain SQL function couldn't do step 4: inviting a new user needs the Auth admin API, which is why this is an edge function.
 
@@ -57,12 +57,12 @@ Open http://localhost:3000 and create an account. Email confirmation is off loca
 
 ```bash
 npm run test:db    # 25 pgTAP tests: RLS and grants, as anon / owner / member / stranger
-npm run test:e2e   # 14 checks through supabase-js: auth, the edge function, the invite email flow
+npm run test:e2e   # 16 checks through supabase-js: auth, the edge function, invite and reset emails
 ```
 
 `test:db` runs [`supabase/tests/rls.test.sql`](supabase/tests/rls.test.sql) inside a transaction that is rolled back. It switches between users by setting `role` and `request.jwt.claims`, the same way PostgREST does. As a sanity check, turning RLS off on `items` makes four of the tests fail.
 
-`test:e2e` ([`scripts/e2e.mjs`](scripts/e2e.mjs)) signs up throwaway users against the local stack and drives the real edge function. It also follows the invite email out of Mailpit: it verifies the token the way `/auth/confirm` does, then checks that the invitee can see the list.
+`test:e2e` ([`scripts/e2e.mjs`](scripts/e2e.mjs)) signs up throwaway users against the local stack and drives the real edge function. It also follows the invite and password-reset emails out of Mailpit. For each, it verifies the token the way `/auth/confirm` does, then checks the result: the invitee can see the list, and after a reset only the new password works.
 
 CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs lint and the production build, starts Supabase, and runs both suites.
 
@@ -78,7 +78,7 @@ npx supabase functions deploy invite-member
 Then, in the dashboard:
 
 - **Authentication → URL Configuration:** set the Site URL to where the app is hosted.
-- **Authentication → Email Templates:** paste in [`supabase/templates/invite.html`](supabase/templates/invite.html) and [`confirmation.html`](supabase/templates/confirmation.html). The defaults put the session tokens in a URL fragment, which a server-rendered app never sees. These templates link to `/auth/confirm?token_hash=…` instead.
+- **Authentication → Email Templates:** paste in [`invite.html`](supabase/templates/invite.html), [`confirmation.html`](supabase/templates/confirmation.html) and [`recovery.html`](supabase/templates/recovery.html) from `supabase/templates/`. The defaults put the session tokens in a URL fragment, which a server-rendered app never sees. These templates link to `/auth/confirm?token_hash=…` instead.
 - Hosted Supabase sends only a few emails an hour with its built-in SMTP. Configure your own SMTP before relying on invites.
 
 Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` wherever the Next.js app runs (e.g. Vercel). The app needs no secret key. Only the edge function has one, and Supabase provides it automatically.
@@ -89,16 +89,17 @@ Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` wherev
 src/
   proxy.ts                    session refresh + redirect to /login
   lib/supabase/               server client, proxy helper, generated DB types
-  app/login/                  sign in / sign up (server actions)
+  app/login/                  sign in, sign up, forgot password (one form, three modes)
   app/page.tsx                your lists and lists shared with you
   app/lists/[id]/             one list: items, people, share form
   app/lists/actions.ts        all list mutations; the share action calls the edge function
   app/auth/confirm/route.ts   exchanges email-link tokens for a session
-  app/welcome/                invited users set a password
+  app/set-password/           invited users and password resets land here
+  components/submit-button.tsx  disables itself and shows progress while an action runs
 supabase/
   migrations/                 schema, grants, RLS policies
   functions/invite-member/    the edge function
-  templates/                  invite + confirmation emails
+  templates/                  invite, confirmation and password-reset emails
   tests/rls.test.sql          pgTAP tests
 scripts/e2e.mjs               end-to-end checks
 ```
