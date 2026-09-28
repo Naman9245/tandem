@@ -2,8 +2,10 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient, getCurrentUser } from "@/lib/supabase/server";
 import { addItem, deleteItem, deleteList, inviteMember, removeMember, setItemDone } from "../actions";
+import { SubmitButton } from "@/components/submit-button";
 import { ConfirmButton } from "./confirm-button";
 import { InviteForm } from "./invite-form";
+import { ItemCheckbox } from "./item-checkbox";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -50,6 +52,7 @@ export default async function ListPage({ params }: PageProps<"/lists/[id]">) {
             <ConfirmButton
               action={deleteList.bind(null, list.id)}
               confirmMessage={`Delete "${list.title}" and all its items?`}
+              pendingText="Deleting…"
               className="btn btn-danger shrink-0"
             >
               Delete list
@@ -58,6 +61,7 @@ export default async function ListPage({ params }: PageProps<"/lists/[id]">) {
             <ConfirmButton
               action={removeMember.bind(null, list.id, user.id)}
               confirmMessage={`Leave "${list.title}"? You'll lose access until the owner adds you again.`}
+              pendingText="Leaving…"
               className="btn shrink-0"
             >
               Leave list
@@ -72,21 +76,17 @@ export default async function ListPage({ params }: PageProps<"/lists/[id]">) {
             {items.map((item) => (
               <li key={item.id} className="flex items-center gap-3 px-4 py-2.5">
                 <form action={setItemDone.bind(null, list.id, item.id, !item.done)}>
-                  <button
-                    aria-label={item.done ? `Mark "${item.content}" as not done` : `Mark "${item.content}" as done`}
-                    className={`flex size-5 items-center justify-center rounded border text-xs ${
-                      item.done ? "border-accent bg-accent text-accent-foreground" : "border-muted hover:border-accent"
-                    }`}
-                  >
-                    {item.done && "✓"}
-                  </button>
+                  <ItemCheckbox done={item.done} label={item.content} />
                 </form>
                 <span className={`flex-1 text-sm ${item.done ? "text-muted line-through" : ""}`}>{item.content}</span>
                 {(isOwner || item.created_by === user.id) && (
                   <form action={deleteItem.bind(null, list.id, item.id)}>
-                    <button aria-label={`Delete "${item.content}"`} className="px-1 text-muted hover:text-danger">
+                    <SubmitButton
+                      aria-label={`Delete "${item.content}"`}
+                      className="px-1.5 text-lg leading-none text-muted hover:text-danger disabled:opacity-40"
+                    >
                       ×
-                    </button>
+                    </SubmitButton>
                   </form>
                 )}
               </li>
@@ -95,7 +95,9 @@ export default async function ListPage({ params }: PageProps<"/lists/[id]">) {
         )}
         <form action={addItem.bind(null, list.id)} className="flex gap-2 p-3">
           <input name="content" required maxLength={280} placeholder="Add an item" aria-label="New item" className="input" />
-          <button className="btn btn-primary shrink-0">Add</button>
+          <SubmitButton pendingText="Adding…" className="btn btn-primary shrink-0">
+            Add
+          </SubmitButton>
         </form>
       </section>
 
@@ -114,7 +116,9 @@ export default async function ListPage({ params }: PageProps<"/lists/[id]">) {
               </span>
               {isOwner ? (
                 <form action={removeMember.bind(null, list.id, m.user_id)}>
-                  <button className="text-muted hover:text-danger">Remove</button>
+                  <SubmitButton pendingText="Removing…" className="text-muted hover:text-danger disabled:opacity-50">
+                    Remove
+                  </SubmitButton>
                 </form>
               ) : (
                 <span className="text-muted">member</span>

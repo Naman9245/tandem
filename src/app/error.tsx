@@ -4,7 +4,7 @@ export default function ErrorPage({ reset }: { error: Error & { digest?: string 
   return (
     <div className="mx-auto max-w-sm pt-16">
       <h1 className="text-xl font-semibold">Something went wrong</h1>
-      <p className="mt-2 text-sm text-muted">That didn&apos;t save. Try again, or reload the page.</p>
+      <p className="mt-2 text-sm text-muted">Try again. If it keeps happening, reload the page.</p>
       <button onClick={reset} className="btn mt-6">
         Try again
       </button>

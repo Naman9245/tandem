@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { SubmitButton } from "@/components/submit-button";
 import { createClient, getCurrentUser } from "@/lib/supabase/server";
 import { createList } from "./lists/actions";
 
@@ -30,7 +31,9 @@ export default async function HomePage() {
           aria-label="List title"
           className="input"
         />
-        <button className="btn btn-primary shrink-0">Create list</button>
+        <SubmitButton pendingText="Creating…" className="btn btn-primary shrink-0">
+          Create list
+        </SubmitButton>
       </form>
 
       <ListSection title="Your lists" lists={mine} empty="You haven't made a list yet." />

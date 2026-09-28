@@ -1,14 +1,18 @@
 "use client";
 
+import { SubmitButton } from "@/components/submit-button";
+
 // A one-button form that asks for confirmation before running a server action.
 export function ConfirmButton({
   action,
   confirmMessage,
+  pendingText,
   className,
   children,
 }: {
   action: () => Promise<void>;
   confirmMessage: string;
+  pendingText?: string;
   className?: string;
   children: React.ReactNode;
 }) {
@@ -19,7 +23,9 @@ export function ConfirmButton({
         if (!window.confirm(confirmMessage)) e.preventDefault();
       }}
     >
-      <button className={className}>{children}</button>
+      <SubmitButton pendingText={pendingText} className={className}>
+        {children}
+      </SubmitButton>
     </form>
   );
 }
